@@ -60,10 +60,12 @@ function draw() {
   fill(0, 0, 0, TRAIL_ALPHA);
   rect(0, 0, width, height);
 
-  const spectrum = fft.analyze();
-  const level = amp.getLevel();
-  const bass = avg(spectrum.slice(0, 30));
-  const highs = avg(spectrum.slice(120));
+  // --- AUDIO REACTIVITY ---
+const spectrum = fft.analyze();
+const level = amp.getLevel();
+const bass  = avg(spectrum.slice(0, 30));   // low frequencies
+const mids  = avg(spectrum.slice(30, 120)); // midrange
+const highs = avg(spectrum.slice(120));     // high frequencies
 
   // --- color drift ---
   let timeDrift = (sin(frameCount * 0.0004) + 1) * 0.5;
