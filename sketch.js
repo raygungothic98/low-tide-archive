@@ -36,9 +36,9 @@ const SPEAK_INTERVAL = 30000; // every 30 seconds approx.
 let RiMarkov = RiTa.RiMarkov || window.RiMarkov;
 
 function preload() {
-  soundRiver = loadSound("lowtide3min.mp3");
-  soundOcean = loadSound("oceanwaves.mp3");
-  archiveLines = loadStrings("field_notes.txt");
+  soundRiver = loadSound("assets/audio/lowtide3min.mp3");
+  soundOcean = loadSound("assets/audio/oceanwaves.mp3");
+  fieldNotes = loadStrings("assets/data/notes.txt"); // ✅ correct name
 }
 
 function setup() {
