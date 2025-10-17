@@ -1,13 +1,12 @@
-// 🌊 LOW-TIDE ARCHIVE (The River Records Itself)
-// Eva Grant © 2025
-
-let soundRiver, soundOcean, fft, amp;
+let soundRiver, soundOcean, fft, amp, masterGain;
 let bands = [];
 let particles = [];
-let tideTexts = [];
-let ripples = [];
 let textAlpha = 255;
 let hasStarted = false;
+let fieldNotes = [];
+let tideText = "";
+let textTimer = 0;
+let lastTextChange = 0;
 
 // --- CONFIG ---
 const NUM_BANDS = 5;
@@ -26,19 +25,10 @@ const sedimentColors = [
   [1, 13, 81]      // midnight basin
 ];
 
-// --- LANGUAGE SYSTEM ---
-let markov, voice;
-let archiveLines = [];
-let lastSpeak = 0;
-const SPEAK_INTERVAL = 30000; // every 30 seconds approx.
-
-// --- RiTa compatibility shim ---
-let RiMarkov = RiTa.RiMarkov || window.RiMarkov;
-
 function preload() {
   soundRiver = loadSound("assets/audio/lowtide3min.mp3");
   soundOcean = loadSound("assets/audio/oceanwaves.mp3");
-  fieldNotes = loadStrings("assets/data/notes.txt"); // ✅ correct name
+  fieldNotes = loadStrings("assets/data/notes.txt");
 }
 
 function setup() {
@@ -49,20 +39,14 @@ function setup() {
   fft = new p5.FFT(0.9, 256);
   amp = new p5.Amplitude();
 
-  // --- Markov setup ---
-  markov = new RiMarkov(3);
-  markov.addText(archiveLines.join(" "));
-
-  // --- Voice setup ---
-  voice = new p5.Speech();
-  voice.setRate(0.92);
-  voice.setPitch(1.05);
-  voice.setVolume(0.7);
-  voice.onStart = () => {
-    let x = random(width * 0.2, width * 0.8);
-    let y = random(height * 0.6, height * 0.9);
-    ripples.push(new Ripple(x, y));
-  };
+  // --- master gain setup ---
+  masterGain = new p5.Gain();
+  masterGain.connect();
+  soundRiver.disconnect();
+  soundOcean.disconnect();
+  soundRiver.connect(masterGain);
+  soundOcean.connect(masterGain);
+  masterGain.amp(1.0); // base level, will modulate later
 
   // --- initialize tide bands ---
   for (let i = 0; i < NUM_BANDS; i++) {
@@ -82,6 +66,10 @@ function setup() {
   }
 
   background(0);
+  textFont("Georgia");
+  textAlign(CENTER, CENTER);
+  fill(255);
+  tideText = random(fieldNotes);
 }
 
 function draw() {
@@ -91,34 +79,44 @@ function draw() {
   const spectrum = fft.analyze();
   const level = amp.getLevel();
   const bass = avg(spectrum.slice(0, 30));
+  const mids = avg(spectrum.slice(30, 120));
   const highs = avg(spectrum.slice(120));
 
-  // --- tide band movement ---
+  // --- dynamic tide gain (slow breathing of amplitude) ---
+  const tideGain = map(bass, 0, 255, 0.8, 1.4);
+  masterGain.amp(tideGain, 0.2); // smooth transitions
+
+  // --- tide color drift (teal → violet, amplitude-reactive) ---
+  let timeDrift = (sin(frameCount * 0.0004) + 1) * 0.5;
+  let levelInfluence = constrain(map(level, 0, 0.4, 0, 0.3), 0, 0.3);
+  let hueDrift = constrain(timeDrift + levelInfluence, 0, 1);
+  let hueBase = lerpColor(color(170, 80, 100), color(260, 70, 80), hueDrift);
+
+  // --- tide bands: wave-like, moving up/down ---
   push();
   translate(width / 2, height / 2);
-  rotate(sin(frameCount * 0.0001) * 0.03);
+  rotate(sin(frameCount * 0.00008) * 0.02);
   translate(-width / 2, -height / 2);
 
   for (let i = 0; i < bands.length; i++) {
     const b = bands[i];
     push();
-    translate(width / 2, b.y + sin(frameCount * 0.002 + i) * 40 * level * 3);
-    rotate(
-      b.angle +
-        sin(frameCount * b.speed + b.offset) * 0.05 +
-        map(bass, 0, 255, -0.02, 0.02)
-    );
+    translate(width / 2, b.y + sin(frameCount * 0.002 + b.offset) * 40);
+    rotate(b.angle + sin(frameCount * b.speed + b.offset) * 0.04 + bass * 0.0005);
     fill(b.color[0], b.color[1], b.color[2], b.alpha);
 
+    // undulating wave geometry
     beginShape();
     const bandHeight = height / 2.5;
     const waveAmp = map(bass, 0, 255, 10, 60);
     const noiseOffset = b.offset + frameCount * 0.0003;
-    for (let x = -width * 1.5; x <= width * 1.5; x += 25) {
+
+    for (let x = -width * 1.5; x <= width * 1.5; x += 20) {
       let y = sin(x * 0.004 + noiseOffset) * waveAmp;
       y += noise(noiseOffset + x * 0.001) * 20 - 10;
       vertex(x, y);
     }
+
     vertex(width * 1.5, bandHeight);
     vertex(-width * 1.5, bandHeight);
     endShape(CLOSE);
@@ -126,42 +124,26 @@ function draw() {
   }
   pop();
 
-  // --- adaptive particle density ---
-  let dynamicCount = int(
-    map(level, 0, 0.4, NUM_PARTICLES * 0.6, NUM_PARTICLES * 1.4)
-  );
-  if (particles.length < dynamicCount) {
-    for (let i = 0; i < 15; i++)
-      particles.push(new Particle(random(width), random(height)));
-  } else if (particles.length > dynamicCount) {
-    particles.splice(0, 10);
-  }
-
-  // --- eelgrass-like flow ---
-  for (let p of particles) {
+  // --- adaptive silt particles ---
+  let activeParticleCount = int(map(level, 0, 0.4, 600, NUM_PARTICLES));
+  for (let i = 0; i < activeParticleCount; i++) {
+    let p = particles[i];
     p.update(level, highs);
     p.applyMouse();
     p.show(highs);
   }
 
-  // --- generative tide text ---
-  if (hasStarted && frameCount % 900 === 0) {
-    tideTexts.push(new TideText(generateTideLine()));
+  // --- generative text (field notes) ---
+  if (millis() - lastTextChange > 7000 + random(2000)) {
+    tideText = random(fieldNotes); // choose a new line
+    lastTextChange = millis();
   }
-  for (let t of tideTexts) {
-    t.update();
-    t.show();
-  }
-  tideTexts = tideTexts.filter((t) => !t.dead);
 
-  // --- ripple shimmer on speech ---
-  for (let r of ripples) {
-    r.update();
-    r.show();
+  if (hasStarted) {
+    fill(255, 255, 255, 140);
+    textSize(18);
+    text(tideText, width / 2, height - 60);
   }
-  ripples = ripples.filter((r) => !r.dead);
-
-  maybeSpeak(level);
 
   // --- intro text ---
   if (!hasStarted) drawIntro();
@@ -178,25 +160,6 @@ function drawIntro() {
   text("click to begin low tide", width / 2, height / 2);
 }
 
-// --- Markov text generation ---
-function generateTideLine() {
-  let results = markov.generate(); // no '1' argument needed in modern RiTa
-  let line = results && results.length ? results[0] : "The river remembers.";
-  return line.charAt(0).toUpperCase() + line.slice(1);
-}
-
-// --- whisper timing + ripple trigger ---
-function maybeSpeak(level) {
-  if (millis() - lastSpeak > SPEAK_INTERVAL && hasStarted) {
-    lastSpeak = millis();
-    if (random() < map(level, 0, 0.3, 0.3, 0.8)) {
-      let line = generateTideLine();
-      voice.speak(line);
-      tideTexts.push(new TideText(line));
-    }
-  }
-}
-
 // --- sound + crossfade ---
 function mousePressed() {
   if (!hasStarted) {
@@ -206,11 +169,11 @@ function mousePressed() {
     soundOcean.loop();
     soundRiver.setVolume(0);
     soundOcean.setVolume(0);
-    soundRiver.fade(0, 0.7, FADE_TIME);
-    soundOcean.fade(0, 0.4, FADE_TIME);
+    soundRiver.fade(0, 1.0, FADE_TIME);
+    soundOcean.fade(0, 0.6, FADE_TIME);
   } else if (soundRiver.isPlaying()) {
-    soundRiver.fade(0.7, 0, FADE_TIME);
-    soundOcean.fade(0.4, 0, FADE_TIME);
+    soundRiver.fade(1.0, 0, FADE_TIME);
+    soundOcean.fade(0.6, 0, FADE_TIME);
     setTimeout(() => {
       soundRiver.pause();
       soundOcean.pause();
@@ -220,12 +183,12 @@ function mousePressed() {
     soundOcean.loop();
     soundRiver.setVolume(0);
     soundOcean.setVolume(0);
-    soundRiver.fade(0, 0.7, FADE_TIME);
-    soundOcean.fade(0, 0.4, FADE_TIME);
+    soundRiver.fade(0, 1.0, FADE_TIME);
+    soundOcean.fade(0, 0.6, FADE_TIME);
   }
 }
 
-// --- UTILITIES ---
+// --- helper functions ---
 function avg(arr) {
   return arr.length ? arr.reduce((a, b) => a + b) / arr.length : 0;
 }
@@ -234,31 +197,26 @@ function avg(arr) {
 class Particle {
   constructor(x, y) {
     this.pos = createVector(x, y);
-    this.vel = p5.Vector.random2D().mult(random(0.3, 1));
+    this.vel = p5.Vector.random2D().mult(random(0.2, 0.6));
     this.acc = createVector(0, 0);
+    this.baseColor = color(93, 255, 253);
+    this.shimmerColor = color(255, 254, 190);
     this.size = random(1.5, 3);
   }
 
   update(level, highs) {
-    let angle =
-      noise(
-        this.pos.x * FLOW_SCALE,
-        this.pos.y * FLOW_SCALE,
-        frameCount * 0.0012
-      ) *
-      TWO_PI *
-      4;
+    let angle = noise(
+      this.pos.x * FLOW_SCALE,
+      this.pos.y * FLOW_SCALE,
+      frameCount * 0.0012
+    ) * TWO_PI * 4;
     let flow = p5.Vector.fromAngle(angle).mult(0.4 + level * 2);
     this.acc.add(flow);
     this.vel.add(this.acc);
     this.vel.mult(FLOW_TAIL);
     this.pos.add(this.vel);
     this.acc.mult(0);
-
-    if (this.pos.x < 0) this.pos.x = width;
-    if (this.pos.x > width) this.pos.x = 0;
-    if (this.pos.y < 0) this.pos.y = height;
-    if (this.pos.y > height) this.pos.y = 0;
+    this.wrap();
   }
 
   applyMouse() {
@@ -271,63 +229,20 @@ class Particle {
     }
   }
 
+  wrap() {
+    if (this.pos.x < 0) this.pos.x = width;
+    if (this.pos.x > width) this.pos.x = 0;
+    if (this.pos.y < 0) this.pos.y = height;
+    if (this.pos.y > height) this.pos.y = 0;
+  }
+
   show(highs) {
-    let shimmerChance = map(highs, 0, 255, 0, 0.02);
-    if (random() < shimmerChance) fill(255, 254, 190, 80);
-    else fill(93, 255, 253, 70);
+    let sparkle = map(highs, 0, 255, 6, 22);
+    let c = dist(this.pos.x, this.pos.y, mouseX, mouseY) < 120
+      ? this.shimmerColor
+      : this.baseColor;
+    fill(red(c), green(c), blue(c), sparkle);
     ellipse(this.pos.x, this.pos.y, this.size);
-  }
-}
-
-// --- TIDE TEXT ---
-class TideText {
-  constructor(line) {
-    this.line = line;
-    this.pos = createVector(
-      random(width * 0.1, width * 0.9),
-      random(height * 0.7, height * 1.1)
-    );
-    this.alpha = 0;
-    this.dead = false;
-    this.life = 900 + random(400);
-    this.size = random(14, 22);
-  }
-
-  update() {
-    this.alpha = map(sin(frameCount * 0.01), -1, 1, 100, 255);
-    this.pos.y -= 0.25;
-    if (this.pos.y < -60) this.dead = true;
-  }
-
-  show() {
-    fill(255, 255, 255, this.alpha * 0.5);
-    textAlign(CENTER);
-    textSize(this.size);
-    text(this.line, this.pos.x, this.pos.y);
-  }
-}
-
-// --- RIPPLE shimmer ---
-class Ripple {
-  constructor(x, y) {
-    this.pos = createVector(x, y);
-    this.r = 0;
-    this.alpha = 120;
-    this.dead = false;
-  }
-
-  update() {
-    this.r += 3;
-    this.alpha -= 1.5;
-    if (this.alpha <= 0) this.dead = true;
-  }
-
-  show() {
-    noFill();
-    stroke(200, 240, 255, this.alpha);
-    strokeWeight(1.2);
-    ellipse(this.pos.x, this.pos.y, this.r * 2);
-    noStroke();
   }
 }
 
