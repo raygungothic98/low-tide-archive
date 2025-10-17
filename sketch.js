@@ -71,36 +71,47 @@ function draw() {
   let hueDrift = constrain(timeDrift + levelInfluence, 0, 1);
   let hueBase = lerpColor(color(170, 80, 100), color(260, 70, 80), hueDrift);
 
-  // --- tide bands ---
+ // --- tide bands (now more reactive to low tide synths) ---
+push();
+translate(width / 2, height / 2);
+rotate(sin(frameCount * 0.00008) * 0.02);
+translate(-width / 2, -height / 2);
+
+for (let i = 0; i < bands.length; i++) {
+  const b = bands[i];
   push();
-  translate(width / 2, height / 2);
-  rotate(sin(frameCount * 0.00008) * 0.02);
-  translate(-width / 2, -height / 2);
 
-  for (let i = 0; i < bands.length; i++) {
-    const b = bands[i];
-    push();
-    translate(width / 2, b.y + sin(frameCount * 0.002 + b.offset) * 60);
-    rotate(b.angle + sin(frameCount * b.speed + b.offset) * 0.06);
-    fill(b.color[0], b.color[1], b.color[2], b.alpha);
+  // stronger sway with bass frequencies
+  const bassLift = map(bass, 0, 255, -120, 120);
+  const verticalDrift = sin(frameCount * 0.002 + b.offset) * (60 + bassLift * 0.4);
+  translate(width / 2, b.y + verticalDrift);
 
-    beginShape();
-    const bandHeight = height / 2.3;
-    const waveAmp = map(bass, 0, 255, 10, 80);
-    const noiseOffset = b.offset + frameCount * 0.0003;
+  // tilt angle influenced by midrange synths
+  const midTilt = map(mids, 0, 255, -PI / 8, PI / 8);
+  rotate(b.angle + midTilt * 0.15 + sin(frameCount * b.speed + b.offset) * 0.04);
 
-    for (let x = -width * 1.5; x <= width * 1.5; x += 20) {
-      let y = sin(x * 0.004 + noiseOffset) * waveAmp;
-      y += noise(noiseOffset + x * 0.001) * 20 - 10;
-      vertex(x, y);
-    }
+  // opacity now tied to volume (like light through tide)
+  const dynamicAlpha = map(level, 0, 0.4, b.alpha * 0.5, b.alpha * 1.8);
+  fill(b.color[0], b.color[1], b.color[2], dynamicAlpha);
 
-    vertex(width * 1.5, bandHeight);
-    vertex(-width * 1.5, bandHeight);
-    endShape(CLOSE);
-    pop();
+  // smooth wide waves
+  beginShape();
+  const bandHeight = height / 2.2;
+  const waveAmp = map(bass, 0, 255, 30, 120); // stronger amplitude = deeper waves
+  const noiseOffset = b.offset + frameCount * 0.0006 * (1 + level * 2);
+
+  for (let x = -width * 1.5; x <= width * 1.5; x += 16) {
+    let y = sin(x * 0.004 + noiseOffset) * waveAmp;
+    y += noise(noiseOffset + x * 0.001) * 20 - 10;
+    vertex(x, y);
   }
+
+  vertex(width * 1.5, bandHeight);
+  vertex(-width * 1.5, bandHeight);
+  endShape(CLOSE);
   pop();
+}
+pop();
 
   // --- adaptive particle density ---
   const targetCount = BASE_PARTICLES + int(map(level, 0, 0.3, 0, 600));
