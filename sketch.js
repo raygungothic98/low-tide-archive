@@ -189,9 +189,9 @@ function mousePressed() {
 
 // --- TEXT GENERATION & WHISPER ---
 function generateTideLine() {
-  let result = markov.generate(1);
+  let result = markov.generate(); // no argument!
   if (result && result.length > 0) {
-    currentLine = result[0];
+    currentLine = result.join(" ");
     textFade = 255;
     whisperText(currentLine);
   }
