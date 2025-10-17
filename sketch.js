@@ -15,8 +15,8 @@ const TRAIL_ALPHA = 6;
 const FLOW_SCALE = 0.0025;
 const FLOW_TAIL = 0.94;
 const FADE_TIME = 3000;
-const TEXT_INTERVAL = 10000; // ms between lines
-const TEXT_FADE_SPEED = 3;
+const TEXT_INTERVAL = 10000;
+const TEXT_FADE_SPEED = 2;
 
 // --- sediment palette (RGB arrays for color()) ---
 const sedimentColors = [
@@ -51,7 +51,7 @@ function setup() {
   markov = new RiTa.RiMarkov(3);
   markov.addText(join(notes, " "));
 
-  // --- initialize tide bands ---
+  // initialize tide bands
   for (let i = 0; i < NUM_BANDS; i++) {
     bands.push({
       color: sedimentColors[i],
@@ -63,7 +63,7 @@ function setup() {
     });
   }
 
-  // --- initialize particles ---
+  // initialize particles
   for (let i = 0; i < NUM_PARTICLES; i++) {
     particles.push(new Particle(random(width), random(height)));
   }
@@ -127,10 +127,13 @@ function draw() {
 
   // --- text fade logic ---
   if (currentLine && textFade > 0) {
-    fill(255, 255, 255, textFade);
+    fill(255, 255, 255, textFade * 0.6);
     textAlign(CENTER, CENTER);
     textSize(20);
+    drawingContext.shadowBlur = 15;
+    drawingContext.shadowColor = color(200, 240, 255, 90);
     text(currentLine, width / 2, height - 80);
+    drawingContext.shadowBlur = 0;
     textFade -= TEXT_FADE_SPEED;
   }
 
@@ -168,7 +171,6 @@ function mousePressed() {
     soundRiver.fade(0, 0.8, FADE_TIME);
     soundOcean.fade(0, 0.4, FADE_TIME);
 
-    // opening whisper
     whisperText("The river remembers what it carries.");
   } else if (soundRiver.isPlaying()) {
     soundRiver.fade(0.8, 0, FADE_TIME);
@@ -189,19 +191,39 @@ function mousePressed() {
 
 // --- TEXT GENERATION & WHISPER ---
 function generateTideLine() {
-  let result = markov.generate(); // no argument!
-  if (result && result.length > 0) {
-    currentLine = result.join(" ");
-    textFade = 255;
-    whisperText(currentLine);
+  let result = markov.generate();
+  let line = "";
+
+  // handle both string and array output
+  if (Array.isArray(result)) {
+    line = result.join(" ");
+  } else if (typeof result === "string") {
+    line = result;
+  } else {
+    return;
   }
+
+  currentLine = line.trim();
+  textFade = 255;
+  whisperText(currentLine);
 }
 
 function whisperText(txt) {
+  // soft glowing text whisper (visual + faint audible layer)
   let voice = new p5.Speech();
-  voice.setRate(0.8);
-  voice.setVolume(0.6);
+  voice.setRate(0.55);
+  voice.setPitch(0.6);
+  voice.setVolume(0.2);
   voice.speak(txt);
+
+  // glowing visual whisper
+  fill(255, 255, 255, textFade * 0.6);
+  textAlign(CENTER, CENTER);
+  textSize(20);
+  drawingContext.shadowBlur = 15;
+  drawingContext.shadowColor = color(200, 240, 255, 90);
+  text(txt, width / 2, height - 80);
+  drawingContext.shadowBlur = 0;
 }
 
 // --- UTILITIES ---
@@ -221,7 +243,7 @@ class Particle {
 
   update(level, highs) {
     let angle = noise(this.pos.x * FLOW_SCALE, this.pos.y * FLOW_SCALE, frameCount * 0.0012) * TWO_PI * 4;
-    let flow = p5.Vector.fromAngle(angle).mult(0.5 + level * 2);
+    let flow = p5.Vector.fromAngle(angle).mult(0.4 + level * 2);
     this.acc.add(flow);
     this.vel.add(this.acc);
     this.vel.mult(FLOW_TAIL);
@@ -241,7 +263,6 @@ class Particle {
       let force = map(d, 0, 200, 3.5, 0.1);
       dir.normalize().mult(force);
       this.vel.add(dir);
-      // shimmer to pale yellow near mouse
       this.hue = color(255, 254, 190);
     } else {
       this.hue = color(93, 255, 253);
